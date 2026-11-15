@@ -114,8 +114,9 @@ a { color: inherit; }
 .topbar { display: flex; height: 85px; align-items: center; justify-content: space-between; padding: 0 48px; border-bottom: 1px solid #eceef4; background: rgb(255 255 255 / 84%); }
 .topbar-kicker { color: #a0a3b2; font-size: 10px; letter-spacing: .2px; }
 .topbar h2 { margin: 3px 0 0; color: #292b42; font-size: 16px; font-weight: 650; letter-spacing: -.25px; }
-.user-chip { display: flex; align-items: center; gap: 10px; }
-.user-avatar { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid #e8e7ff; border-radius: 50%; background: #f0efff; color: #5d53db; font-size: 13px; font-weight: 700; }
+.user-chip { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.user-chip:hover .user-name { color: #5148d4; }
+.user-avatar { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border: 1px solid #e8e7ff; border-radius: 50%; background: #f0efff; color: #5d53db; font-size: 13px; font-weight: 700; object-fit: cover; }
 .user-name { color: #51546b; font-size: 12px; font-weight: 600; }
 .main-content { width: min(100%, 1280px); margin: 0 auto; padding: 39px 48px 56px; }
 .mobile-nav { display: none; }
@@ -220,13 +221,34 @@ a { color: inherit; }
 .bank-card-brand { gap: 7px; color: #fff; font-size: 15px; }
 .bank-card-brand .brand-mark { width: 27px; height: 27px; border: 1px solid rgb(255 255 255 / 35%); border-radius: 8px; background: rgb(255 255 255 / 10%); font-size: 13px; }
 .bank-card-brand .brand-light { color: rgb(255 255 255 / 70%); }
-.bank-card-number { margin: 23px 0 18px; font-size: 15px; letter-spacing: 2px; }
+.bank-card-identifier { display: grid; gap: 7px; margin: 17px 0 12px; }
+.bank-card-identifier > span { color: rgb(255 255 255 / 82%); font-size: 9px; font-weight: 600; letter-spacing: .2px; }
+.bank-card-identifier strong { overflow-wrap: anywhere; font-size: 13px; font-weight: 650; letter-spacing: 1px; }
+.mastercard-mark { position: relative; display: flex; width: 43px; height: 28px; align-items: center; }
+.mastercard-mark span { width: 24px; height: 24px; border-radius: 50%; background: #eb001b; }
+.mastercard-mark span + span { margin-left: -9px; background: #f79e1b; mix-blend-mode: screen; opacity: .94; }
+.card-demo-warning { margin: 0; color: #fff; font-size: 10px; font-weight: 750; letter-spacing: .35px; }
 .bank-card-bottom { display: flex; align-items: center; justify-content: space-between; color: rgb(255 255 255 / 72%); font-size: 9px; letter-spacing: .8px; }
 .card-status { display: inline-flex; align-items: center; gap: 5px; color: #d4f4e3; font-size: 10px; letter-spacing: 0; }
 .card-status.blocked { color: #ffe0df; }
 .card-limit { display: flex; justify-content: space-between; margin: 14px 0; color: rgb(255 255 255 / 74%); font-size: 9px; }
 .card-limit strong { color: #fff; font-size: 10px; }
 .bank-card .button { margin-top: 18px; }
+
+.profile-card { display: grid; width: min(100%, 680px); gap: 25px; padding: 26px; }
+.profile-preview { display: flex; align-items: center; gap: 13px; padding-bottom: 20px; border-bottom: 1px solid #e5e7ee; }
+.profile-preview > img, .profile-preview > span { display: grid; width: 58px; height: 58px; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid #e2e1ff; border-radius: 50%; background: #f0efff; color: #554bd6; font-size: 20px; font-weight: 700; object-fit: cover; }
+.profile-preview > div { display: grid; gap: 5px; }
+.profile-preview > div strong { color: #34364c; font-size: 14px; }
+.profile-section-heading { display: flex; align-items: center; gap: 8px; color: #6258e8; }
+.profile-section-heading h2 { margin: 0; color: #33364c; font-size: 14px; font-weight: 650; }
+.profile-form .field label { color: #42455a; }
+.profile-form .field-hint { color: #74788b; line-height: 1.5; }
+.profile-url-field { position: relative; }
+.profile-url-field > svg { position: absolute; top: 13px; left: 12px; color: #777b91; pointer-events: none; }
+.profile-url-field input { padding-left: 38px; }
+.profile-save { justify-self: start; min-width: 175px; }
+.profile-notice { margin: 0; padding: 11px 13px; border: 1px solid #d6ebdf; border-radius: 9px; background: #f2faf5; color: #28694f; font-size: 11px; line-height: 1.5; }
 
 .confirmation-card, .operation-result { width: min(100%, 520px); margin: 0 auto; padding: 27px; border: 1px solid #e9ebf2; border-radius: 16px; background: #fff; box-shadow: var(--card-shadow); }
 .confirmation-card h2, .operation-result h2 { margin: 8px 0 6px; color: #2d3048; font-size: 21px; letter-spacing: -.6px; }
@@ -262,7 +284,7 @@ a { color: inherit; }
 .success-panel > p { margin: 0 0 19px; }
 
 .history-list { display: grid; }
-.history-item { display: flex; min-height: 66px; align-items: center; gap: 10px; border-bottom: 1px solid #f0f1f5; }
+.history-item { display: flex; min-height: 66px; align-items: center; gap: 10px; border-bottom: 1px solid #e7e9ef; }
 .history-item:last-child { border-bottom: 0; }
 .history-icon { display: grid; width: 33px; height: 33px; flex: 0 0 auto; place-items: center; border-radius: 10px; background: #f0efff; color: #6258e8; }
 .history-main { display: grid; min-width: 0; gap: 4px; }
@@ -272,6 +294,23 @@ a { color: inherit; }
 .status-activo { background: #edf8f3; color: #328367; }
 .status-pendiente { background: #fff6e8; color: #a5742b; }
 .status-pagado, .status-finalizado { background: #f0efff; color: #6258e8; }
+.status-cancelado { background: #fff2e8; color: #995d28; }
+.term-history-item { align-items: flex-start; padding: 14px 0; }
+.term-history-item .history-icon { margin-top: 1px; }
+.term-history-item .status-pill { flex: 0 0 auto; }
+.term-history-item .history-main { flex: 1; gap: 6px; }
+.term-history-item .history-main > span { overflow: visible; text-overflow: unset; white-space: normal; }
+.term-estimates { display: grid; gap: 4px; padding-top: 7px; border-top: 1px solid #e7e9ef; }
+.term-estimates span { display: flex; justify-content: space-between; gap: 10px; color: #5c6073; font-size: 10px; }
+.term-estimates strong { color: #34364c; font-size: 10px; font-weight: 650; }
+.term-cancel-link { justify-self: start; padding: 0; border: 0; background: transparent; color: #a34350; font-size: 10px; font-weight: 650; text-decoration: underline; text-underline-offset: 2px; }
+.term-cancel-link:hover:not(:disabled) { color: #7e2936; }
+.term-cancel-confirm { display: grid; gap: 9px; padding: 11px; border: 1px solid #ecd7d9; border-radius: 9px; background: #fff9f9; }
+.term-cancel-confirm p { margin: 0; color: #6f4148; font-size: 10px; line-height: 1.5; }
+.term-cancel-confirm > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.term-cancel-confirm .button { min-height: 34px; padding-inline: 10px; font-size: 10px; }
+.button-danger { border-color: #a34350; background: #a34350; color: #fff; }
+.button-danger:hover:not(:disabled) { background: #85313d; }
 
 .auth-page { display: grid; min-height: 100vh; grid-template-columns: minmax(320px, .95fr) minmax(460px, 1.05fr); background: #fff; }
 .auth-intro { position: relative; display: flex; overflow: hidden; flex-direction: column; justify-content: space-between; min-height: 100vh; padding: 37px clamp(35px, 6vw, 80px); background: linear-gradient(145deg, #2d315f, #4d4a9b 65%, #6258e8); color: #fff; }
@@ -343,6 +382,11 @@ a { color: inherit; }
   .quick-card { min-height: 220px; padding: 19px; }
   .content-card { padding: 18px 16px; }
   .operation-form-card { padding: 19px 16px; }
+  .profile-card { gap: 20px; padding: 20px 16px; }
+  .profile-save { width: 100%; }
+  .term-history-item { flex-wrap: wrap; }
+  .term-history-item .status-pill { margin-left: 43px; }
+  .term-cancel-confirm { margin-right: -6px; }
   .form-row { grid-template-columns: 1fr; gap: 14px; }
   .confirmation-card, .operation-result { padding: 22px 18px; }
   .data-table th, .data-table td { padding-inline: 6px; }

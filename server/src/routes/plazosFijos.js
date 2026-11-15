@@ -1,11 +1,16 @@
 const express = require("express");
-const { pool } = require("../db");
+const { pool, withTransaction } = require("../db");
 const { httpError } = require("../errors");
 const { calcularPlazoFijo, parseEntero, parseTasa } = require("../finance");
 const { asyncHandler } = require("../middleware/asyncHandler");
 const { requireAuth } = require("../middleware/auth");
 const { centsToDecimal, parseId, parseMoney } = require("../money");
 const { runIdempotent } = require("../idempotency");
+const {
+  cancelFixedDeposit,
+  includeMaturityEstimate,
+  settleMaturedFixedDeposits,
+} = require("../fixedDeposits");
 
 const router = express.Router();
 router.use(requireAuth);
@@ -30,16 +35,21 @@ router.post("/simular", asyncHandler(async (req, res) => {
 }));
 
 router.get("/", asyncHandler(async (req, res) => {
-  const [rows] = await pool.query(
-    `SELECT p.id, p.cuenta_id, p.monto_invertido, p.tasa_nominal_anual, p.dias,
-            p.fecha_inicio, p.fecha_vencimiento, p.estado
-     FROM plazos_fijos p
-     JOIN cuentas c ON c.id = p.cuenta_id
-     WHERE c.usuario_id = ?
-     ORDER BY p.id DESC`,
-    [req.user.id]
-  );
-  res.json(rows);
+  const rows = await withTransaction(async (connection) => {
+    // Bloqueo y transición activa->finalizado hacen que el crédito y su movimiento ocurran una vez.
+    await settleMaturedFixedDeposits(connection, req.user.id);
+    const [deposits] = await connection.query(
+      `SELECT p.id, p.cuenta_id, p.monto_invertido, p.tasa_nominal_anual, p.dias, p.liquidado_at,
+              p.fecha_inicio, p.fecha_vencimiento, p.estado
+       FROM plazos_fijos p
+       JOIN cuentas c ON c.id = p.cuenta_id
+       WHERE c.usuario_id = ?
+       ORDER BY p.id DESC`,
+      [req.user.id]
+    );
+    return deposits;
+  });
+  res.json(rows.map(includeMaturityEstimate));
 }));
 
 router.post("/", asyncHandler(async (req, res) => {
@@ -97,6 +107,20 @@ router.post("/", asyncHandler(async (req, res) => {
   });
 
   res.status(201).json(plazoCreado);
+}));
+
+router.post("/:id/cancelar", asyncHandler(async (req, res) => {
+  const depositId = parseId(req.params.id);
+  if (!depositId) throw httpError(400, "Plazo fijo inválido");
+
+  const { result } = await runIdempotent({
+    userId: req.user.id,
+    operation: "plazos-fijos.cancelar",
+    key: req.get("Idempotency-Key"),
+    payload: { plazo_fijo_id: depositId },
+    work: (connection) => cancelFixedDeposit(connection, { depositId, userId: req.user.id }),
+  });
+  res.json(result);
 }));
 
 module.exports = router;

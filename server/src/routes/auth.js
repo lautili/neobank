@@ -5,7 +5,8 @@ const { pool, withTransaction } = require("../db");
 const { httpError } = require("../errors");
 const { digits, maskedCard } = require("../ids");
 const { asyncHandler } = require("../middleware/asyncHandler");
-const { rateLimit, authRateLimit, authRateWindowMs, authRateMaxKeys } = require("../middleware/auth");
+const { requireAuth, rateLimit, authRateLimit, authRateWindowMs, authRateMaxKeys } = require("../middleware/auth");
+const { parseProfilePatch } = require("../profile");
 
 const router = express.Router();
 const limited = rateLimit(authRateLimit, authRateWindowMs, { maxKeys: authRateMaxKeys });
@@ -67,6 +68,9 @@ router.post("/register", limited, asyncHandler(async (req, res) => {
       apellido: data.apellido,
       email: data.email,
       dni: data.dni,
+      alias: null,
+      alias_updated_at: null,
+      avatar_url: null,
     };
   });
 
@@ -82,7 +86,8 @@ router.post("/login", limited, asyncHandler(async (req, res) => {
   }
 
   const [rows] = await pool.query(
-    `SELECT id, nombre, apellido, email, dni, password_hash FROM usuarios WHERE email = ?`,
+    `SELECT id, nombre, apellido, email, dni, alias, alias_updated_at, avatar_url, password_hash
+     FROM usuarios WHERE email = ?`,
     [email]
   );
   const user = rows[0];
@@ -98,8 +103,63 @@ router.post("/login", limited, asyncHandler(async (req, res) => {
       apellido: user.apellido,
       email: user.email,
       dni: user.dni,
+      alias: user.alias,
+      alias_updated_at: user.alias_updated_at,
+      avatar_url: user.avatar_url,
     },
   });
+}));
+
+router.get("/me", requireAuth, asyncHandler(async (req, res) => {
+  const [rows] = await pool.query(
+    `SELECT id, nombre, apellido, email, dni, alias, alias_updated_at, avatar_url
+     FROM usuarios WHERE id = ?`,
+    [req.user.id]
+  );
+  if (!rows.length) throw httpError(404, "Usuario no encontrado");
+  res.json({ usuario: rows[0] });
+}));
+
+router.patch("/me", requireAuth, asyncHandler(async (req, res) => {
+  const patch = parseProfilePatch(req.body);
+  if (!patch) throw httpError(400, "Datos de perfil inválidos");
+
+  const usuario = await withTransaction(async (connection) => {
+    const [rows] = await connection.query(
+      `SELECT id, nombre, apellido, email, dni, alias, alias_updated_at, avatar_url,
+              (alias_updated_at IS NULL OR alias_updated_at <= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY))
+                AS alias_change_allowed
+       FROM usuarios WHERE id = ? FOR UPDATE`,
+      [req.user.id]
+    );
+    if (!rows.length) throw httpError(404, "Usuario no encontrado");
+
+    const current = rows[0];
+    const aliasChanged = Object.prototype.hasOwnProperty.call(patch, "alias")
+      && patch.alias !== current.alias;
+    if (aliasChanged && !current.alias_change_allowed) {
+      throw httpError(429, "El alias solo puede cambiarse una vez cada 30 días");
+    }
+
+    if (aliasChanged) {
+      await connection.query(
+        "UPDATE usuarios SET alias = ?, alias_updated_at = UTC_TIMESTAMP() WHERE id = ?",
+        [patch.alias, req.user.id]
+      );
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "avatar_url")) {
+      await connection.query("UPDATE usuarios SET avatar_url = ? WHERE id = ?", [patch.avatar_url, req.user.id]);
+    }
+
+    const [updated] = await connection.query(
+      `SELECT id, nombre, apellido, email, dni, alias, alias_updated_at, avatar_url
+       FROM usuarios WHERE id = ?`,
+      [req.user.id]
+    );
+    return updated[0];
+  });
+
+  res.json({ usuario });
 }));
 
 module.exports = router;

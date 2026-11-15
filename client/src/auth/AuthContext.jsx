@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthContext } from "./auth-context";
 import {
   clearStoredSession,
@@ -9,11 +9,24 @@ import {
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(readStoredSession);
+  const sessionRef = useRef(session);
 
   useEffect(() => {
-    const expireSession = () => setSession(null);
+    const expireSession = () => {
+      sessionRef.current = null;
+      setSession(null);
+    };
     window.addEventListener(SESSION_EVENT, expireSession);
     return () => window.removeEventListener(SESSION_EVENT, expireSession);
+  }, []);
+
+  const updateUser = useCallback((user) => {
+    const current = sessionRef.current;
+    if (!current?.token) return;
+    storeSession(current.token, user);
+    const next = { ...current, user };
+    sessionRef.current = next;
+    setSession(next);
   }, []);
 
   const value = useMemo(
@@ -22,14 +35,18 @@ export function AuthProvider({ children }) {
       isAuthenticated: Boolean(session?.token),
       signIn(token, user) {
         storeSession(token, user);
-        setSession({ token, user });
+        const next = { token, user };
+        sessionRef.current = next;
+        setSession(next);
       },
+      updateUser,
       signOut() {
         clearStoredSession();
+        sessionRef.current = null;
         setSession(null);
       },
     }),
-    [session],
+    [session, updateUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

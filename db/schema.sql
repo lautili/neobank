@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS usuarios (
   email VARCHAR(255) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   dni VARCHAR(16) NOT NULL,
+  alias VARCHAR(30) NULL,
+  alias_updated_at DATETIME NULL,
+  avatar_url VARCHAR(2048) NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_usuarios_email (email),
   UNIQUE KEY uq_usuarios_dni (dni)
@@ -75,7 +78,9 @@ CREATE TABLE IF NOT EXISTS movimientos (
     'transferencia_enviada',
     'transferencia_recibida',
     'prestamo',
-    'plazo_fijo'
+    'plazo_fijo',
+    'plazo_fijo_cancelado',
+    'plazo_fijo_vencido'
   ) NOT NULL,
   monto DECIMAL(12,2) NOT NULL,
   saldo_resultante DECIMAL(12,2) NOT NULL,
@@ -112,7 +117,8 @@ CREATE TABLE IF NOT EXISTS plazos_fijos (
   dias INT NOT NULL,
   fecha_inicio DATE NOT NULL,
   fecha_vencimiento DATE NOT NULL,
-  estado ENUM('activo', 'finalizado') NOT NULL DEFAULT 'activo',
+  liquidado_at DATETIME NULL,
+  estado ENUM('activo', 'finalizado', 'cancelado') NOT NULL DEFAULT 'activo',
   KEY idx_plazos_cuenta (cuenta_id),
   CONSTRAINT fk_plazos_cuenta
     FOREIGN KEY (cuenta_id) REFERENCES cuentas (id),

@@ -1,10 +1,11 @@
 const express = require("express");
-const { pool } = require("../db");
+const { pool, withTransaction } = require("../db");
 const { httpError } = require("../errors");
 const { asyncHandler } = require("../middleware/asyncHandler");
 const { requireAuth } = require("../middleware/auth");
 const { addCentsWithinLimit, centsToDecimal, parseId, parseMoney } = require("../money");
 const { runIdempotent } = require("../idempotency");
+const { settleMaturedFixedDeposits } = require("../fixedDeposits");
 
 const router = express.Router();
 router.use(requireAuth);
@@ -12,10 +13,15 @@ router.use(requireAuth);
 const cuentaFields = "id, usuario_id, cbu, cvu, saldo, moneda, created_at";
 
 router.get("/", asyncHandler(async (req, res) => {
-  const [rows] = await pool.query(
-    `SELECT ${cuentaFields} FROM cuentas WHERE usuario_id = ? ORDER BY id`,
-    [req.user.id]
-  );
+  const rows = await withTransaction(async (connection) => {
+    // Los saldos de dashboard deben incluir vencimientos acreditados aunque no se visite /plazos-fijos.
+    await settleMaturedFixedDeposits(connection, req.user.id);
+    const [accounts] = await connection.query(
+      `SELECT ${cuentaFields} FROM cuentas WHERE usuario_id = ? ORDER BY id`,
+      [req.user.id]
+    );
+    return accounts;
+  });
   res.json(rows);
 }));
 

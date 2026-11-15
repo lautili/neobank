@@ -6,6 +6,11 @@ import { getIdempotencyKey } from "../lib/idempotency";
 import { formatDate, formatMoney } from "../lib/format";
 
 const initialForm = { cuenta_id: "", monto: "", tasa_nominal_anual: "0", dias: "30" };
+const termStateLabels = {
+  activo: "Activo",
+  finalizado: "Finalizado",
+  cancelado: "Cancelado",
+};
 
 export default function FixedTermsPage() {
   const [accounts, setAccounts] = useState([]);
@@ -16,27 +21,36 @@ export default function FixedTermsPage() {
   const [stage, setStage] = useState("edit");
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const [cancelingId, setCancelingId] = useState(null);
+  const [confirmingId, setConfirmingId] = useState(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const requestRef = useRef(null);
+  const cancelRequestRef = useRef(null);
   const selectedAccount = accounts.find((account) => String(account.id) === form.cuenta_id);
 
   useEffect(() => {
     let active = true;
-    Promise.allSettled([api.get("/cuentas"), api.get("/plazos-fijos")])
-      .then(([accountResult, termResult]) => {
+    api.get("/plazos-fijos")
+      .then(async (termResult) => {
         if (!active) return;
         const errors = [];
-        if (accountResult.status === "fulfilled") {
-          setAccounts(accountResult.value.data);
-          if (accountResult.value.data[0]) {
-            setForm((current) => ({ ...current, cuenta_id: String(accountResult.value.data[0].id) }));
+        setTerms(termResult.data);
+        // Consultar plazos puede liquidar vencimientos: leer cuentas después para mostrar el saldo acreditado.
+        try {
+          const accountResult = await api.get("/cuentas");
+          if (!active) return;
+          setAccounts(accountResult.data);
+          if (accountResult.data[0]) {
+            setForm((current) => ({ ...current, cuenta_id: String(accountResult.data[0].id) }));
           }
-        } else {
-          errors.push(`No pudimos cargar tus cuentas. ${getApiError(accountResult.reason)}`);
+        } catch (requestError) {
+          errors.push(`No pudimos cargar tus cuentas. ${getApiError(requestError)}`);
         }
-        if (termResult.status === "fulfilled") setTerms(termResult.value.data);
-        else errors.push(`No pudimos cargar tus plazos fijos. ${getApiError(termResult.reason)}`);
         setError(errors.join(" "));
+      })
+      .catch((requestError) => {
+        if (active) setError(`No pudimos cargar tus plazos fijos. ${getApiError(requestError)}`);
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -84,7 +98,15 @@ export default function FixedTermsPage() {
         headers: { "Idempotency-Key": key },
       });
       setResult(data);
-      setTerms((current) => [data, ...current]);
+      setTerms((current) => [{
+        ...data,
+        interes_estimado: data.interes_estimado ?? data.interes,
+      }, ...current]);
+      if (data.saldo_resultante != null) {
+        setAccounts((current) => current.map((account) =>
+          account.id === data.cuenta_id ? { ...account, saldo: data.saldo_resultante } : account,
+        ));
+      }
       requestRef.current = null;
       setStage("success");
     } catch (requestError) {
@@ -102,6 +124,50 @@ export default function FixedTermsPage() {
     setError("");
   }
 
+  async function cancelTerm(term) {
+    const payload = { plazo_fijo_id: term.id };
+    setCancelingId(term.id);
+    setError("");
+    setNotice("");
+    try {
+      const key = getIdempotencyKey(cancelRequestRef, payload);
+      const { data } = await api.post(`/plazos-fijos/${term.id}/cancelar`, {}, {
+        headers: { "Idempotency-Key": key },
+      });
+      cancelRequestRef.current = null;
+      setTerms((current) => current.map((item) =>
+        item.id === term.id ? { ...item, estado: data.estado, monto_devuelto: data.monto_devuelto } : item,
+      ));
+      setAccounts((current) => current.map((account) =>
+        account.id === data.cuenta_id ? { ...account, saldo: data.saldo_resultante } : account,
+      ));
+      setConfirmingId(null);
+      setNotice(`Cancelación confirmada. Se devolvieron ${formatMoney(data.monto_devuelto)} a tu cuenta.`);
+
+      const refreshWarnings = [];
+      try {
+        const termRefresh = await api.get("/plazos-fijos");
+        setTerms(termRefresh.data);
+      } catch {
+        refreshWarnings.push("no pudimos actualizar el estado de tus plazos fijos");
+      }
+      try {
+        // El listado puede liquidar otros vencimientos; actualizar el saldo después de esa liquidación.
+        const accountRefresh = await api.get("/cuentas");
+        setAccounts(accountRefresh.data);
+      } catch {
+        refreshWarnings.push("no pudimos actualizar tus saldos");
+      }
+      if (refreshWarnings.length) {
+        setNotice((current) => `${current} La operación quedó confirmada, pero ${refreshWarnings.join(" y ")}; actualizá la página para volver a consultar.`);
+      }
+    } catch (requestError) {
+      setError(getApiError(requestError));
+    } finally {
+      setCancelingId(null);
+    }
+  }
+
   return (
     <div className="page-stack">
       <PageHeading eyebrow="HACÉ CRECER TUS AHORROS" title="Plazos fijos" description="Elegí un plazo y conocé cuánto vas a recibir al vencimiento." />
@@ -114,7 +180,7 @@ export default function FixedTermsPage() {
                 <span className="result-mark"><Check size={25} aria-hidden="true" /></span>
                 <span className="eyebrow">INVERSIÓN CONFIRMADA</span>
                 <h2>Tu ahorro ya está en marcha.</h2>
-                <p>Invertiste {formatMoney(result.monto_invertido)}. Al vencimiento recibirás {formatMoney(result.monto_al_vencimiento)} el {formatDate(result.fecha_vencimiento)}.</p>
+                <p>Invertiste {formatMoney(result.monto_invertido)}. El total estimado al vencimiento es {formatMoney(result.monto_al_vencimiento)} el {formatDate(result.fecha_vencimiento)}.</p>
                 <button type="button" className="button button-secondary" onClick={resetForm}><RotateCcw size={16} /> Crear otro plazo fijo</button>
               </div>
             ) : stage === "review" ? (
@@ -131,7 +197,7 @@ export default function FixedTermsPage() {
                   <div><dt>Interés estimado</dt><dd>{formatMoney(simulation.interes)}</dd></div>
                   <div className="detail-total"><dt>Monto al vencimiento</dt><dd>{formatMoney(simulation.monto_al_vencimiento)}</dd></div>
                 </dl>
-                <div className="alert alert-info"><Clock3 size={17} /><span>El importe invertido se descuenta de tu saldo y queda afectado hasta el vencimiento.</span></div>
+                <div className="alert alert-info"><Clock3 size={17} /><span>Al consultar tus plazos después del vencimiento, se acredita el total calculado. También podés cancelar antes: se devuelve solo el capital, sin intereses ni penalidad.</span></div>
                 <button type="button" className="button button-primary button-wide" onClick={createTerm} disabled={working}>
                   {working ? "Procesando..." : "Confirmar plazo fijo"} <ArrowRight size={17} />
                 </button>
@@ -159,14 +225,50 @@ export default function FixedTermsPage() {
           </section>
 
           <section className="content-card">
-            <div className="section-heading"><div><span className="eyebrow">TUS INVERSIONES</span><h2>Plazos fijos anteriores</h2></div></div>
+            <div className="section-heading"><div><span className="eyebrow">TUS INVERSIONES</span><h2>Tus plazos fijos</h2></div></div>
+            {notice && <p className="profile-notice" role="status">{notice}</p>}
             {terms.length ? (
               <div className="history-list">
                 {terms.map((term) => (
-                  <article className="history-item" key={term.id}>
+                  <article className="history-item term-history-item" key={term.id}>
                     <span className="history-icon"><WalletCards size={17} /></span>
-                    <div className="history-main"><strong>{formatMoney(term.monto_invertido)}</strong><span>{term.dias} días · vence {formatDate(term.fecha_vencimiento)}</span></div>
-                    <span className={`status-pill status-${term.estado}`}>{term.estado}</span>
+                    <div className="history-main">
+                      <strong>Capital: {formatMoney(term.monto_invertido)}</strong>
+                      <span>{term.dias} días · vence {formatDate(term.fecha_vencimiento)}</span>
+                      {term.estado === "cancelado" ? (
+                        <div className="term-estimates">
+                          <span>Capital devuelto <strong>{formatMoney(term.monto_invertido)}</strong></span>
+                          <span>Sin intereses ni penalidad</span>
+                        </div>
+                      ) : (
+                        <div className="term-estimates">
+                          <span>{term.estado === "finalizado" ? "Beneficio acreditado" : "Beneficio estimado"} <strong>{formatMoney(term.interes_estimado)}</strong></span>
+                          <span>{term.estado === "finalizado" ? "Total acreditado" : "Total estimado"} <strong>{formatMoney(term.monto_al_vencimiento)}</strong></span>
+                        </div>
+                      )}
+                      {confirmingId === term.id && (
+                        <div className="term-cancel-confirm" role="group" aria-label={`Confirmar cancelación de plazo fijo ${term.id}`}>
+                          <p>Al cancelar, se devuelve el capital íntegro ({formatMoney(term.monto_invertido)}), sin intereses ni penalidad.</p>
+                          <div>
+                            <button type="button" className="button button-secondary" onClick={() => setConfirmingId(null)} disabled={cancelingId === term.id}>Volver</button>
+                            <button type="button" className="button button-danger" onClick={() => cancelTerm(term)} disabled={cancelingId === term.id}>
+                              {cancelingId === term.id ? "Cancelando..." : "Confirmar cancelación"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {term.estado === "activo" && confirmingId !== term.id && (
+                        <button
+                          type="button"
+                          className="term-cancel-link"
+                          onClick={() => { setConfirmingId(term.id); setError(""); setNotice(""); }}
+                          disabled={cancelingId != null}
+                        >
+                          Cancelar plazo fijo
+                        </button>
+                      )}
+                    </div>
+                    <span className={`status-pill status-${term.estado}`}>{termStateLabels[term.estado] || term.estado}</span>
                   </article>
                 ))}
               </div>

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   ArrowLeftRight,
   ArrowRight,
@@ -8,6 +9,7 @@ import {
   LayoutDashboard,
   LogOut,
   ReceiptText,
+  UserRound,
   WalletCards,
 } from "lucide-react";
 import { NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -20,6 +22,7 @@ import CardsPage from "./pages/CardsPage";
 import FixedTermsPage from "./pages/FixedTermsPage";
 import LoansPage from "./pages/LoansPage";
 import OverviewPage from "./pages/OverviewPage";
+import ProfilePage from "./pages/ProfilePage";
 import TransferPage from "./pages/TransferPage";
 
 const navigation = [
@@ -29,7 +32,16 @@ const navigation = [
   { to: "/tarjetas", label: "Tarjetas", icon: CreditCard },
   { to: "/prestamos", label: "Préstamos", icon: Landmark },
   { to: "/plazos-fijos", label: "Plazos fijos", icon: WalletCards },
+  { to: "/perfil", label: "Perfil", icon: UserRound },
 ];
+
+function UserAvatar({ url, letter }) {
+  const [failed, setFailed] = useState(false);
+  if (url && !failed) {
+    return <img className="user-avatar" src={url} alt="" onError={() => setFailed(true)} />;
+  }
+  return <span className="user-avatar" aria-hidden="true">{letter}</span>;
+}
 
 function DashboardLayout() {
   const { user, signOut } = useAuth();
@@ -85,10 +97,10 @@ function DashboardLayout() {
             <span className="topbar-kicker">NeoBank · Banca digital</span>
             <h2>{currentPage?.label || "Tu espacio"}</h2>
           </div>
-          <div className="user-chip">
-            <span className="user-avatar" aria-hidden="true">{firstName.slice(0, 1).toUpperCase()}</span>
-            <span className="user-name">{firstName}</span>
-          </div>
+          <NavLink className="user-chip" to="/perfil" aria-label="Ver y editar mi perfil">
+            <UserAvatar key={user?.avatar_url || "initial"} url={user?.avatar_url} letter={firstName.slice(0, 1).toUpperCase()} />
+            <span className="user-name">{user?.alias || firstName}</span>
+          </NavLink>
         </header>
         <main className="main-content">
           <Outlet />
@@ -135,6 +147,7 @@ export default function App() {
           <Route path="tarjetas" element={<CardsPage />} />
           <Route path="prestamos" element={<LoansPage />} />
           <Route path="plazos-fijos" element={<FixedTermsPage />} />
+          <Route path="perfil" element={<ProfilePage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>

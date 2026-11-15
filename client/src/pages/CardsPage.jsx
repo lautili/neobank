@@ -1,8 +1,33 @@
 import { useEffect, useState } from "react";
-import { CreditCard, LockKeyhole, ShieldCheck, UnlockKeyhole } from "lucide-react";
+import { LockKeyhole, ShieldCheck, UnlockKeyhole } from "lucide-react";
 import { ErrorMessage, EmptyState, LoadingState, PageHeading } from "../components/PageStates";
 import { api, getApiError } from "../lib/api";
 import { formatMoney } from "../lib/format";
+
+function hasValidLuhnChecksum(firstFifteen, checkDigit) {
+  let sum = Number(checkDigit);
+  for (let offset = 0; offset < firstFifteen.length; offset += 1) {
+    let digit = Number(firstFifteen[firstFifteen.length - 1 - offset]);
+    if (offset % 2 === 0) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+  }
+  return sum % 10 === 0;
+}
+
+// El ID SQL se incorpora sin pérdida; un dígito final fijo se ajusta solo si validara por Luhn.
+// Este valor solo se genera en la UI, no se envía ni persiste y no es utilizable para pagos.
+function demoIdentifierForCard(cardId) {
+  const id = String(cardId);
+  if (!/^\d{1,12}$/.test(id)) return "ID-DEMO-NO-VALIDO";
+  const firstFourteen = `55${id.padStart(12, "0")}`;
+  const firstFifteen = `${firstFourteen}0`;
+  const invalidCheckDigit = hasValidLuhnChecksum(firstFifteen, "0") ? "1" : "0";
+  const digits = `${firstFifteen}${invalidCheckDigit}`;
+  return digits.match(/.{4}/g).join(" ");
+}
 
 export default function CardsPage() {
   const [cards, setCards] = useState([]);
@@ -13,7 +38,9 @@ export default function CardsPage() {
   useEffect(() => {
     let active = true;
     api.get("/tarjetas")
-      .then(({ data }) => { if (active) setCards(data); })
+      .then(({ data }) => {
+        if (active) setCards(data);
+      })
       .catch((requestError) => { if (active) setError(getApiError(requestError)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -25,7 +52,9 @@ export default function CardsPage() {
     setError("");
     try {
       const { data } = await api.patch(`/tarjetas/${card.id}`, { estado });
-      setCards((current) => current.map((item) => item.id === card.id ? data : item));
+      setCards((current) => current.map((item) =>
+        item.id === card.id ? data : item,
+      ));
     } catch (requestError) {
       setError(getApiError(requestError));
     } finally {
@@ -45,9 +74,15 @@ export default function CardsPage() {
               <article className={`bank-card ${index % 2 ? "bank-card-alt" : ""} ${blocked ? "bank-card-blocked" : ""}`} key={card.id}>
                 <div className="bank-card-top">
                   <span className="brand bank-card-brand"><span className="brand-mark">N</span><span>neo<span className="brand-light">bank</span></span></span>
-                  <CreditCard size={22} aria-hidden="true" />
+                  <span className="mastercard-mark" role="img" aria-label="Diseño visual inspirado en Mastercard, solo demostrativo">
+                    <span />
+                    <span />
+                  </span>
                 </div>
-                <div className="bank-card-number">{card.numero_enmascarado}</div>
+                <div className="bank-card-identifier">
+                  <span>Identificador demo · no es número de tarjeta</span>
+                  <strong>{demoIdentifierForCard(card.id)}</strong>
+                </div>
                 <div className="bank-card-bottom">
                   <span>{card.tipo === "debito" ? "DÉBITO" : "CRÉDITO"}</span>
                   <span className={`card-status ${blocked ? "blocked" : ""}`}>
@@ -56,8 +91,9 @@ export default function CardsPage() {
                   </span>
                 </div>
                 {card.limite_credito != null && (
-                  <div className="card-limit">Límite disponible <strong>{formatMoney(card.limite_credito)}</strong></div>
+                  <div className="card-limit">Límite de crédito <strong>{formatMoney(card.limite_credito)}</strong></div>
                 )}
+                <p className="card-demo-warning">DEMO · No válida para pagos</p>
                 <button
                   type="button"
                   className={`button ${blocked ? "button-light" : "button-card-ghost"}`}

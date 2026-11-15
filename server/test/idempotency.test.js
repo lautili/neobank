@@ -75,6 +75,34 @@ test("la misma clave con payload divergente falla explícitamente", async () => 
   );
 });
 
+test("una operación fallida revierte el registro idempotente y permite un reintento", async () => {
+  const { database, transaction } = fakeStorage();
+  const execute = createIdempotentExecutor(database, transaction);
+  let attempts = 0;
+  const request = {
+    userId: 7,
+    operation: "plazos-fijos.cancelar",
+    key: "cancel-1",
+    payload: { plazo_fijo_id: 4 },
+    work: async () => {
+      attempts += 1;
+      if (attempts === 1) throw Object.assign(new Error("fallo de negocio"), { status: 409 });
+      return { id: 4, estado: "cancelado" };
+    },
+  };
+
+  await assert.rejects(execute(request), (error) => error.status === 409);
+  assert.deepEqual(await execute(request), {
+    result: { id: 4, estado: "cancelado" },
+    replayed: false,
+  });
+  assert.deepEqual(await execute(request), {
+    result: { id: 4, estado: "cancelado" },
+    replayed: true,
+  });
+  assert.equal(attempts, 2);
+});
+
 test("valida y acota la clave antes de usarla", () => {
   assert.equal(validateIdempotencyKey("key-1"), "key-1");
   assert.throws(() => validateIdempotencyKey(""), (error) => error.status === 400);

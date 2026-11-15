@@ -68,3 +68,9 @@ NeoBank es una plataforma de banca digital y billetera virtual orientada a simul
 * **Transferencias:** Capacidad de transferir fondos entre cuentas propias o de terceros, generando automáticamente los registros en la tabla `movimientos` dentro de una **transacción SQL atómica** (ACID).
 * **Tarjetas:** Visualización de tarjetas asociadas, estado de bloqueo/desbloqueo.
 * **Préstamos y Plazos Fijos:** Simulador y alta de préstamos con cálculo de cuotas, e inversión en plazos fijos con cálculo de intereses a fecha de vencimiento.
+
+## Commits de agentes
+
+Al finalizar una tarea que implique cambios, los agentes pueden crear un commit sin pedir autorización adicional, una vez que hayan verificado los cambios y ejecutado las pruebas pertinentes.
+
+Antes de crear el commit, deben revisar el estado y el diff de Git, y agregar únicamente los archivos modificados por su tarea. No deben incluir cambios preexistentes o ajenos a la tarea ni usar comandos de staging globales como `git add -A`. No deben hacer push salvo que el usuario lo solicite explícitamente.

@@ -39,7 +39,7 @@ NeoBank es una plataforma de banca digital y billetera virtual orientada a simul
 5. **`movimientos`** (Historial unificado de transacciones)
    * `id` (SERIAL / INT, PK)
    * `cuenta_id` (INT, FK -> cuentas.id)
-   * `tipo` (ENUM: 'ingreso', 'extraccion', 'transferencia_enviada', 'transferencia_recibida', 'prestamo', 'plazo_fijo')
+   * `tipo` (ENUM: 'ingreso', 'extraccion', 'transferencia_enviada', 'transferencia_recibida', 'prestamo', 'plazo_fijo', 'plazo_fijo_cancelado', 'plazo_fijo_vencido')
    * `monto` (DECIMAL(12,2))
    * `saldo_resultante` (DECIMAL(12,2))
    * `referencia_id` (INT, NULL - ID de la tabla relacionada ej. transferencia_id)
@@ -60,7 +60,7 @@ NeoBank es una plataforma de banca digital y billetera virtual orientada a simul
    * `dias` (INT)
    * `fecha_inicio` (DATE)
    * `fecha_vencimiento` (DATE)
-   * `estado` (ENUM: 'activo', 'finalizado')
+   * `estado` (ENUM: 'activo', 'finalizado', 'cancelado')
 
 ## 4. Requerimientos Funcionales por Módulo
 * **Autenticación:** Registro de usuarios, login seguro con JWT y protección de rutas en el frontend.
@@ -75,3 +75,6 @@ NeoBank es una plataforma de banca digital y billetera virtual orientada a simul
 * Los saldos y créditos se mantienen en centavos enteros y respetan el máximo `DECIMAL(12,2)` (`9.999.999.999,99`). Ingresos simulados y préstamos automáticos siguen habilitados; una operación se rechaza solo si el saldo resultante excede ese máximo.
 * El limitador de registro/login es en memoria por instancia, aplica una cantidad de claves máxima y devuelve HTTP 503 si se llena hasta que expire alguna. Expira y limpia buckets periódicamente. Sus valores desplegables son `AUTH_RATE_LIMIT_LIMIT`, `AUTH_RATE_LIMIT_WINDOW_MS` y `AUTH_RATE_LIMIT_MAX_KEYS` (ver `server/.env.example`). No se activa `trust proxy` globalmente: `req.ip` se basa en la conexión directa salvo configuración explícita de una topología de proxy confiable. Detrás de un proxy sin configurar, los clientes pueden compartir IP; con varias instancias el límite no se comparte y cada instancia tiene su propio presupuesto.
 * `withTransaction` devuelve conexiones al pool solo tras commit o rollback exitoso. Si falla rollback, la conexión se destruye; si falla commit, el desenlace se considera desconocido, la conexión se destruye y la API devuelve HTTP 503. Reintentar esa solicitud con la misma clave permite resolver/reproducir el resultado sin duplicar la operación.
+* El perfil permite actualizar alias y URL HTTP/HTTPS de avatar autenticados. El servidor aplica un cambio de alias cada 30 días y persiste la fecha del último cambio. No se cargan ni almacenan archivos de avatar.
+* Las tarjetas muestran un identificador de 16 dígitos generado en el cliente a partir del ID por tarjeta, estable y distinto para cada ID. El dígito de control se fuerza a inválido; el valor no se envía ni persiste, no es un PAN y no sirve para pagos. No se generan números válidos según Luhn.
+* Los plazos fijos exponen en el listado el beneficio y total estimados al vencimiento, calculados en el servidor con la fórmula existente. Al leer la lista de cuentas o la de plazos fijos, los vencidos se liquidan una sola vez en una transacción con bloqueo y `liquidado_at`: se acredita capital más el beneficio, se inserta `plazo_fijo_vencido` y el estado queda `finalizado`. También se reconcilian plazos vencidos que una versión anterior pudo marcar como finalizados sin acreditarlos. Si la cuenta no admite el saldo resultante, la transacción falla sin marcar el plazo liquidado. Un plazo activo puede cancelarse antes de vencer: la demo devuelve el capital íntegro, sin interés ni penalidad, registra `plazo_fijo_cancelado` y cambia el estado a `cancelado` en una operación idempotente y transaccional. En la UI, cancelados no presentan el beneficio estimado como percibido.

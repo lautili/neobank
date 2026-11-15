@@ -29,10 +29,12 @@ export function getMovementLabel(type) {
     transferencia_recibida: "Transferencia recibida",
     prestamo: "Préstamo acreditado",
     plazo_fijo: "Plazo fijo",
+    plazo_fijo_cancelado: "Plazo fijo cancelado · capital devuelto",
+    plazo_fijo_vencido: "Plazo fijo vencido · liquidación",
   };
   return labels[type] || "Movimiento";
 }
 
 export function isCreditMovement(type) {
-  return ["ingreso", "transferencia_recibida", "prestamo"].includes(type);
+  return ["ingreso", "transferencia_recibida", "prestamo", "plazo_fijo_cancelado", "plazo_fijo_vencido"].includes(type);
 }
