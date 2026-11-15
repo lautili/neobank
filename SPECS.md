@@ -14,11 +14,12 @@ NeoBank es una plataforma de banca digital y billetera virtual orientada a simul
 ### Tablas Principales:
 1. **`usuarios`**
    * `id` (SERIAL / INT, PK)
-   * `nombre`, `apellido`, `email` (UNIQUE), `password_hash`, `dni` (UNIQUE), `created_at`
+   * `nombre`, `apellido`, `email` (UNIQUE), `password_hash`, `dni` (UNIQUE), `avatar_url`, `created_at`
 2. **`cuentas`**
    * `id` (SERIAL / INT, PK)
    * `usuario_id` (INT, FK -> usuarios.id)
    * `cbu` / `cvu` (VARCHAR, UNIQUE)
+   * `alias` (VARCHAR(30), UNIQUE, NULL permitido; alias bancario case-insensitive) y `alias_updated_at`
    * `saldo` (DECIMAL(12,2), DEFAULT 0.00)
    * `moneda` (VARCHAR(3), DEFAULT 'ARS')
    * `created_at`
@@ -64,8 +65,8 @@ NeoBank es una plataforma de banca digital y billetera virtual orientada a simul
 
 ## 4. Requerimientos Funcionales por Módulo
 * **Autenticación:** Registro de usuarios, login seguro con JWT y protección de rutas en el frontend.
-* **Cuentas y Saldo:** Visualización del balance actual y detalle de CBU/CVU.
-* **Transferencias:** Capacidad de transferir fondos entre cuentas propias o de terceros, generando automáticamente los registros en la tabla `movimientos` dentro de una **transacción SQL atómica** (ACID).
+* **Cuentas y Saldo:** Visualización del balance actual y detalle del alias bancario, CBU y CVU.
+* **Transferencias:** Capacidad de transferir fondos a un alias bancario o CBU/CVU entre cuentas propias o de terceros, generando automáticamente los registros en la tabla `movimientos` dentro de una **transacción SQL atómica** (ACID).
 * **Tarjetas:** Visualización de tarjetas asociadas, estado de bloqueo/desbloqueo.
 * **Préstamos y Plazos Fijos:** Simulador y alta de préstamos con cálculo de cuotas, e inversión en plazos fijos con cálculo de intereses a fecha de vencimiento.
 
@@ -75,6 +76,8 @@ NeoBank es una plataforma de banca digital y billetera virtual orientada a simul
 * Los saldos y créditos se mantienen en centavos enteros y respetan el máximo `DECIMAL(12,2)` (`9.999.999.999,99`). Ingresos simulados y préstamos automáticos siguen habilitados; una operación se rechaza solo si el saldo resultante excede ese máximo.
 * El limitador de registro/login es en memoria por instancia, aplica una cantidad de claves máxima y devuelve HTTP 503 si se llena hasta que expire alguna. Expira y limpia buckets periódicamente. Sus valores desplegables son `AUTH_RATE_LIMIT_LIMIT`, `AUTH_RATE_LIMIT_WINDOW_MS` y `AUTH_RATE_LIMIT_MAX_KEYS` (ver `server/.env.example`). No se activa `trust proxy` globalmente: `req.ip` se basa en la conexión directa salvo configuración explícita de una topología de proxy confiable. Detrás de un proxy sin configurar, los clientes pueden compartir IP; con varias instancias el límite no se comparte y cada instancia tiene su propio presupuesto.
 * `withTransaction` devuelve conexiones al pool solo tras commit o rollback exitoso. Si falla rollback, la conexión se destruye; si falla commit, el desenlace se considera desconocido, la conexión se destruye y la API devuelve HTTP 503. Reintentar esa solicitud con la misma clave permite resolver/reproducir el resultado sin duplicar la operación.
-* El perfil permite actualizar alias y URL HTTP/HTTPS de avatar autenticados. El servidor aplica un cambio de alias cada 30 días y persiste la fecha del último cambio. No se cargan ni almacenan archivos de avatar.
+* `/auth/me` permite actualizar únicamente la URL HTTP/HTTPS del avatar personal; login y perfil no contienen alias.
+* Cada cuenta puede tener un alias bancario opcional de 6 a 30 letras/números/puntos/guiones/guiones bajos, sin espacios. `PATCH /api/cuentas/:id/alias` exige titularidad, bloquea la cuenta, aplica un cooldown de 30 días por cuenta y devuelve HTTP 409 si el alias está ocupado. El índice único permite NULL y es case-insensitive. Las transferencias aceptan ese alias o CBU/CVU de 22 dígitos.
+* El setup migratorio agrega alias e índice a `cuentas` y elimina las columnas de alias en `usuarios`; no migra los valores antiguos porque eran nombres de perfil y no identificadores de cuenta.
 * Las tarjetas muestran un identificador de 16 dígitos generado en el cliente a partir del ID por tarjeta, estable y distinto para cada ID. El dígito de control se fuerza a inválido; el valor no se envía ni persiste, no es un PAN y no sirve para pagos. No se generan números válidos según Luhn.
 * Los plazos fijos exponen en el listado el beneficio y total estimados al vencimiento, calculados en el servidor con la fórmula existente. Al leer la lista de cuentas o la de plazos fijos, los vencidos se liquidan una sola vez en una transacción con bloqueo y `liquidado_at`: se acredita capital más el beneficio, se inserta `plazo_fijo_vencido` y el estado queda `finalizado`. También se reconcilian plazos vencidos que una versión anterior pudo marcar como finalizados sin acreditarlos. Si la cuenta no admite el saldo resultante, la transacción falla sin marcar el plazo liquidado. Un plazo activo puede cancelarse antes de vencer: la demo devuelve el capital íntegro, sin interés ni penalidad, registra `plazo_fijo_cancelado` y cambia el estado a `cancelado` en una operación idempotente y transaccional. En la UI, cancelados no presentan el beneficio estimado como percibido.

@@ -5,14 +5,9 @@ import { useAuth } from "../auth/useAuth";
 import { api, getApiError } from "../lib/api";
 import { formatDate } from "../lib/format";
 
-const EMPTY_PROFILE = { alias: null, alias_updated_at: null, avatar_url: null };
-const ALIAS_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} ._-]{1,29}$/u;
+const EMPTY_PROFILE = { nombre: "", avatar_url: null };
+const ALIAS_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{5,29}$/;
 const ALIAS_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
-
-function normalizeAlias(value) {
-  const trimmed = value.trim();
-  return trimmed || null;
-}
 
 function validateAvatarUrl(value) {
   const trimmed = value.trim();
@@ -32,9 +27,13 @@ function validateAvatarUrl(value) {
 export default function ProfilePage() {
   const { updateUser } = useAuth();
   const [profile, setProfile] = useState(EMPTY_PROFILE);
-  const [form, setForm] = useState({ alias: "", avatar_url: "" });
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [accounts, setAccounts] = useState([]);
+  const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [alias, setAlias] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  const [savingAlias, setSavingAlias] = useState(false);
   const [now, setNow] = useState(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -42,12 +41,18 @@ export default function ProfilePage() {
 
   useEffect(() => {
     let active = true;
-    api.get("/auth/me")
-      .then(({ data }) => {
+    Promise.all([api.get("/auth/me"), api.get("/cuentas")])
+      .then(([profileResult, accountsResult]) => {
         if (!active) return;
-        const user = data.usuario;
+        const user = profileResult.data.usuario;
+        const loadedAccounts = accountsResult.data;
         setProfile(user);
-        setForm({ alias: user.alias || "", avatar_url: user.avatar_url || "" });
+        setAvatarUrl(user.avatar_url || "");
+        setAccounts(loadedAccounts);
+        if (loadedAccounts[0]) {
+          setSelectedAccountId(String(loadedAccounts[0].id));
+          setAlias(loadedAccounts[0].alias || "");
+        }
         setNow(Date.now());
         updateUser(user);
       })
@@ -56,68 +61,87 @@ export default function ProfilePage() {
     return () => { active = false; };
   }, [updateUser]);
 
+  const selectedAccount = accounts.find((account) => String(account.id) === selectedAccountId);
   const aliasAvailableAt = useMemo(() => {
-    if (!profile.alias_updated_at) return null;
-    const updatedAt = new Date(profile.alias_updated_at);
+    if (!selectedAccount?.alias_updated_at) return null;
+    const updatedAt = new Date(selectedAccount.alias_updated_at);
     if (Number.isNaN(updatedAt.getTime())) return null;
     return new Date(updatedAt.getTime() + ALIAS_COOLDOWN_MS);
-  }, [profile.alias_updated_at]);
+  }, [selectedAccount]);
   const aliasLocked = Boolean(aliasAvailableAt && aliasAvailableAt.getTime() > now);
   const aliasHint = aliasLocked
-    ? `Podés volver a cambiarlo desde el ${formatDate(aliasAvailableAt.toISOString())}. La API aplica el límite de 30 días.`
-    : profile.alias_updated_at
-      ? `Último cambio registrado por la API: ${formatDate(profile.alias_updated_at)}. Podés cambiarlo nuevamente; luego vuelve a aplicar el límite de 30 días.`
-      : "La API no registra un cambio previo de alias. Después de guardarlo, aplica una espera de 30 días.";
+    ? `Podés volver a cambiarlo desde el ${formatDate(aliasAvailableAt.toISOString())}. La API aplica el límite por cuenta.`
+    : selectedAccount?.alias_updated_at
+      ? `Último cambio: ${formatDate(selectedAccount.alias_updated_at)}. Luego de guardar vuelve a aplicar el límite de 30 días.`
+      : "Esta cuenta todavía no tiene alias. Al definirlo, comienza el límite de 30 días.";
   const firstLetter = (profile.nombre || "N").slice(0, 1).toUpperCase();
 
-  function updateField(event) {
-    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+  function changeAccount(event) {
+    const id = event.target.value;
+    const account = accounts.find((item) => String(item.id) === id);
+    setSelectedAccountId(id);
+    setAlias(account?.alias || "");
     setError("");
     setNotice("");
   }
 
-  async function saveProfile(event) {
+  async function saveAlias(event) {
     event.preventDefault();
     setError("");
     setNotice("");
-
-    const alias = normalizeAlias(form.alias);
-    const currentAlias = profile.alias || null;
-    if (alias !== currentAlias && alias !== null && !ALIAS_PATTERN.test(alias)) {
-      setError("El alias debe tener entre 2 y 30 caracteres y comenzar con una letra o número.");
+    if (!selectedAccount) return;
+    const nextAlias = alias.trim().toLowerCase() || null;
+    if (nextAlias !== selectedAccount.alias && nextAlias !== null && !ALIAS_PATTERN.test(nextAlias)) {
+      setError("El alias debe tener de 6 a 30 letras, números, puntos, guiones o guiones bajos, sin espacios.");
       return;
     }
-    if (aliasLocked && alias !== currentAlias) {
-      setError(`Podés volver a cambiar el alias desde el ${formatDate(aliasAvailableAt.toISOString())}. La API controla este límite.`);
+    if (aliasLocked && nextAlias !== selectedAccount.alias) {
+      setError(`Podés volver a cambiar el alias desde el ${formatDate(aliasAvailableAt.toISOString())}.`);
       return;
     }
-
-    const avatar = validateAvatarUrl(form.avatar_url);
-    if (avatar.error) {
-      setError(avatar.error);
-      return;
-    }
-
-    const payload = {};
-    if (alias !== currentAlias) payload.alias = alias;
-    if (avatar.value !== (profile.avatar_url || null)) payload.avatar_url = avatar.value;
-    if (!Object.keys(payload).length) {
+    if (nextAlias === selectedAccount.alias) {
       setNotice("No hay cambios para guardar.");
       return;
     }
 
-    setSaving(true);
+    setSavingAlias(true);
     try {
-      const { data } = await api.patch("/auth/me", payload);
-      setProfile(data.usuario);
-      setForm({ alias: data.usuario.alias || "", avatar_url: data.usuario.avatar_url || "" });
-      setAvatarFailed(false);
-      updateUser(data.usuario);
-      setNotice("Tu perfil se actualizó correctamente.");
+      const { data } = await api.patch(`/cuentas/${selectedAccount.id}/alias`, { alias: nextAlias });
+      setAccounts((current) => current.map((account) => account.id === data.cuenta.id ? data.cuenta : account));
+      setAlias(data.cuenta.alias || "");
+      setNotice("El alias de la cuenta se actualizó correctamente.");
     } catch (requestError) {
       setError(getApiError(requestError));
     } finally {
-      setSaving(false);
+      setSavingAlias(false);
+    }
+  }
+
+  async function saveAvatar(event) {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    const avatar = validateAvatarUrl(avatarUrl);
+    if (avatar.error) {
+      setError(avatar.error);
+      return;
+    }
+    if (avatar.value === (profile.avatar_url || null)) {
+      setNotice("No hay cambios para guardar.");
+      return;
+    }
+    setSavingAvatar(true);
+    try {
+      const { data } = await api.patch("/auth/me", { avatar_url: avatar.value });
+      setProfile(data.usuario);
+      setAvatarUrl(data.usuario.avatar_url || "");
+      setAvatarFailed(false);
+      updateUser(data.usuario);
+      setNotice("Tu avatar se actualizó correctamente.");
+    } catch (requestError) {
+      setError(getApiError(requestError));
+    } finally {
+      setSavingAvatar(false);
     }
   }
 
@@ -126,7 +150,7 @@ export default function ProfilePage() {
       <PageHeading
         eyebrow="TU ESPACIO PERSONAL"
         title="Tu perfil"
-        description="Personalizá cómo te identificás en NeoBank."
+        description="Personalizá tu avatar y administrá el alias para recibir transferencias en cada cuenta."
       />
       {error && <ErrorMessage>{error}</ErrorMessage>}
       {notice && <p className="profile-notice" role="status">{notice}</p>}
@@ -137,28 +161,16 @@ export default function ProfilePage() {
               ? <img src={profile.avatar_url} alt="Vista previa del avatar" onError={() => setAvatarFailed(true)} />
               : <span aria-hidden="true">{firstLetter}</span>}
             <div>
-              <span className="eyebrow">VISTA PREVIA</span>
-              <strong>{form.alias.trim() || profile.nombre || "Tu perfil"}</strong>
+              <span className="eyebrow">PERFIL PERSONAL</span>
+              <strong>{profile.nombre || "Tu perfil"}</strong>
             </div>
           </div>
 
-          <form className="form-stack profile-form" onSubmit={saveProfile} noValidate>
+          <form className="form-stack profile-form" onSubmit={saveAvatar} noValidate>
             <div className="profile-section-heading">
               <UserRound size={18} aria-hidden="true" />
-              <h2>Datos visibles</h2>
+              <h2>Avatar</h2>
             </div>
-            <Field
-              id="profile-alias"
-              name="alias"
-              label="Alias"
-              value={form.alias}
-              onChange={updateField}
-              placeholder="Ej.: Sol Perez"
-              minLength={2}
-              maxLength={30}
-              disabled={aliasLocked}
-              hint={`${aliasHint} Usá de 2 a 30 letras, números, espacios, puntos, guiones o guiones bajos.`}
-            />
             <div className="field">
               <label htmlFor="profile-avatar">URL del avatar</label>
               <div className="profile-url-field">
@@ -170,18 +182,55 @@ export default function ProfilePage() {
                   inputMode="url"
                   autoComplete="url"
                   maxLength={2048}
-                  value={form.avatar_url}
-                  onChange={updateField}
+                  value={avatarUrl}
+                  onChange={(event) => setAvatarUrl(event.target.value)}
                   placeholder="https://ejemplo.com/mi-avatar.jpg"
                   aria-describedby="profile-avatar-hint"
                 />
               </div>
               <span id="profile-avatar-hint" className="field-hint">Pegá un enlace HTTP o HTTPS. No se suben archivos.</span>
             </div>
-            <button type="submit" className="button button-primary profile-save" disabled={saving}>
+            <button type="submit" className="button button-primary profile-save" disabled={savingAvatar}>
               <Save size={16} aria-hidden="true" />
-              {saving ? "Guardando..." : "Guardar cambios"}
+              {savingAvatar ? "Guardando..." : "Guardar avatar"}
             </button>
+          </form>
+
+          <form className="form-stack profile-form" onSubmit={saveAlias} noValidate>
+            <div className="profile-section-heading">
+              <UserRound size={18} aria-hidden="true" />
+              <h2>Alias de cuenta para transferencias</h2>
+            </div>
+            {accounts.length === 0 ? <p>No tenés cuentas disponibles para configurar un alias.</p> : (
+              <>
+                <div className="field">
+                  <label htmlFor="profile-account">Cuenta</label>
+                  <select id="profile-account" value={selectedAccountId} onChange={changeAccount}>
+                    {accounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        Cuenta ····{String(account.cbu).slice(-4)} · {account.cbu}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Field
+                  id="profile-account-alias"
+                  name="alias"
+                  label="Alias bancario"
+                  value={alias}
+                  onChange={(event) => { setAlias(event.target.value); setError(""); setNotice(""); }}
+                  placeholder="Ej.: sol.perez-1"
+                  minLength={6}
+                  maxLength={30}
+                  disabled={aliasLocked}
+                  hint={`${aliasHint} Usá de 6 a 30 letras, números, puntos, guiones o guiones bajos, sin espacios.`}
+                />
+                <button type="submit" className="button button-primary profile-save" disabled={savingAlias || aliasLocked}>
+                  <Save size={16} aria-hidden="true" />
+                  {savingAlias ? "Guardando..." : "Guardar alias de cuenta"}
+                </button>
+              </>
+            )}
           </form>
         </section>
       )}

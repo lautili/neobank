@@ -99,7 +99,7 @@ function DashboardLayout() {
           </div>
           <NavLink className="user-chip" to="/perfil" aria-label="Ver y editar mi perfil">
             <UserAvatar key={user?.avatar_url || "initial"} url={user?.avatar_url} letter={firstName.slice(0, 1).toUpperCase()} />
-            <span className="user-name">{user?.alias || firstName}</span>
+            <span className="user-name">{firstName}</span>
           </NavLink>
         </header>
         <main className="main-content">

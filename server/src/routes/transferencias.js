@@ -8,6 +8,7 @@ const { runIdempotent } = require("../idempotency");
 
 const router = express.Router();
 router.use(requireAuth);
+const ALIAS_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{5,29}$/;
 
 router.get("/", asyncHandler(async (req, res) => {
   const [rows] = await pool.query(
@@ -27,7 +28,9 @@ router.post("/", asyncHandler(async (req, res) => {
   const destino = String(req.body?.destino ?? "").trim();
   const monto = parseMoney(req.body?.monto);
   const descripcion = parseDescripcion(req.body?.descripcion);
-  if (!origenId || !/^\d{22}$/.test(destino) || !monto || descripcion === undefined) {
+  const destinoEsNumero = /^\d{22}$/.test(destino);
+  const destinoEsAlias = ALIAS_PATTERN.test(destino);
+  if (!origenId || (!destinoEsNumero && !destinoEsAlias) || !monto || descripcion === undefined) {
     throw httpError(400, "Datos de transferencia inválidos");
   }
 
@@ -43,10 +46,9 @@ router.post("/", asyncHandler(async (req, res) => {
       );
       if (!origenPropio.length) throw httpError(404, "Cuenta de origen no encontrada");
 
-      const [destinos] = await connection.query(
-        "SELECT id FROM cuentas WHERE cbu = ? OR cvu = ?",
-        [destino, destino]
-      );
+      const [destinos] = destinoEsNumero
+        ? await connection.query("SELECT id FROM cuentas WHERE cbu = ? OR cvu = ?", [destino, destino])
+        : await connection.query("SELECT id FROM cuentas WHERE alias = ?", [destino.toLowerCase()]);
       if (destinos.length !== 1) throw httpError(404, "Cuenta de destino no encontrada");
       const destinoId = destinos[0].id;
       if (destinoId === origenId) throw httpError(400, "La cuenta de destino debe ser distinta");
@@ -54,13 +56,16 @@ router.post("/", asyncHandler(async (req, res) => {
       const primero = Math.min(origenId, destinoId);
       const segundo = Math.max(origenId, destinoId);
       const [bloqueadas] = await connection.query(
-        "SELECT id, saldo, moneda FROM cuentas WHERE id IN (?, ?) ORDER BY id FOR UPDATE",
+        "SELECT id, saldo, moneda, alias FROM cuentas WHERE id IN (?, ?) ORDER BY id FOR UPDATE",
         [primero, segundo]
       );
       if (bloqueadas.length !== 2) throw httpError(404, "Cuenta no encontrada");
 
       const origen = bloqueadas.find((cuenta) => cuenta.id === origenId);
       const destinoCuenta = bloqueadas.find((cuenta) => cuenta.id === destinoId);
+      if (destinoEsAlias && !destinoEsNumero && destinoCuenta.alias?.toLowerCase() !== destino.toLowerCase()) {
+        throw httpError(404, "Cuenta de destino no encontrada");
+      }
       if (origen.moneda !== destinoCuenta.moneda) {
         throw httpError(400, "Las cuentas deben usar la misma moneda");
       }
@@ -98,6 +103,8 @@ router.post("/", asyncHandler(async (req, res) => {
         cuenta_destino_id: destinoId,
         monto: montoDecimal,
         descripcion,
+        destino: destinoEsNumero ? destino : destino.toLowerCase(),
+        destino_tipo: destinoEsNumero ? "cbu_cvu" : "alias",
         saldo_resultante: centsToDecimal(nuevoOrigen),
       };
     },

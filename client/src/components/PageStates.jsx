@@ -61,7 +61,7 @@ export function AccountSelect({ accounts, value, onChange, id = "cuenta" }) {
       <select id={id} value={value} onChange={(event) => onChange(event.target.value)} required>
         {accounts.map((account) => (
           <option key={account.id} value={account.id}>
-            Cuenta ····{String(account.cbu).slice(-4)} · {formatMoney(account.saldo)}
+              Cuenta ····{String(account.cbu).slice(-4)}{account.alias ? ` · ${account.alias}` : ""} · {formatMoney(account.saldo)}
           </option>
         ))}
       </select>

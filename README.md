@@ -99,12 +99,14 @@ La interfaz queda disponible en `http://localhost:5173`.
 ## Módulos principales
 
 - Autenticación: registro, login y protección de rutas
-- Cuentas y saldo: visualización del balance y detalles del CBU/CVU
-- Transferencias: movimientos entre cuentas con validaciones y registros transaccionales
+- Cuentas y saldo: visualización del balance, CBU/CVU y alias bancario único por cuenta
+- Transferencias: envíos mediante alias o CBU/CVU con validaciones y registros transaccionales
 - Tarjetas: listado y estado de tarjetas asociadas
 - Préstamos: simulación y creación de préstamos
 - Plazos fijos: cálculo de intereses y alta de inversiones
-- Perfil: edición de alias (un cambio cada 30 días, validado por el servidor) y URL de avatar
+- Perfil: edición de alias bancario por cuenta (un cambio cada 30 días, validado por el servidor) y URL de avatar personal
+
+El alias identifica una cuenta para recibir transferencias; no es un nombre de usuario. `/auth/me` y el login solo exponen los datos personales y el avatar. Los alias se validan y almacenan en `cuentas`, con unicidad case-insensitive por banco. El setup migratorio retira de `usuarios` los alias de perfil anteriores sin copiarlos a cuentas.
 
 ### Tarjetas de demostración
 

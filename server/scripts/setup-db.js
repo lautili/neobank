@@ -15,6 +15,28 @@ async function ensureColumn(connection, table, column, definition) {
   }
 }
 
+async function ensureIndex(connection, table, index) {
+  const [rows] = await connection.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?`,
+    [table, index]
+  );
+  if (!rows.length) {
+    await connection.query(`ALTER TABLE \`${table}\` ADD UNIQUE KEY \`${index}\` (\`alias\`)`);
+  }
+}
+
+async function removeColumn(connection, table, column) {
+  const [rows] = await connection.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [table, column]
+  );
+  if (rows.length) {
+    await connection.query(`ALTER TABLE \`${table}\` DROP COLUMN \`${column}\``);
+  }
+}
+
 async function main() {
   const schema = fs.readFileSync(path.join(__dirname, "..", "..", "db", "schema.sql"), "utf8");
   const connection = await mysql.createConnection({
@@ -27,9 +49,16 @@ async function main() {
 
   try {
     await connection.query(schema);
-    await ensureColumn(connection, "usuarios", "alias", "VARCHAR(30) NULL");
-    await ensureColumn(connection, "usuarios", "alias_updated_at", "DATETIME NULL");
     await ensureColumn(connection, "usuarios", "avatar_url", "VARCHAR(2048) NULL");
+    await ensureColumn(connection, "cuentas", "alias", "VARCHAR(30) NULL");
+    await ensureColumn(connection, "cuentas", "alias_updated_at", "DATETIME NULL");
+    await connection.query(
+      "ALTER TABLE cuentas MODIFY alias VARCHAR(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL"
+    );
+    await ensureIndex(connection, "cuentas", "uq_cuentas_alias");
+    // Los alias existentes en usuarios eran nombres de perfil, no identificadores bancarios.
+    await removeColumn(connection, "usuarios", "alias");
+    await removeColumn(connection, "usuarios", "alias_updated_at");
     await ensureColumn(connection, "plazos_fijos", "liquidado_at", "DATETIME NULL");
     await connection.query(
       `ALTER TABLE movimientos MODIFY tipo ENUM(

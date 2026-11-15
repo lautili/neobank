@@ -6,6 +6,7 @@ import { formatDate, formatMoney } from "../lib/format";
 import { getIdempotencyKey } from "../lib/idempotency";
 
 const initialForm = { cuenta_origen_id: "", destino: "", monto: "", descripcion: "" };
+const ALIAS_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{5,29}$/;
 
 export default function TransferPage() {
   const [form, setForm] = useState(initialForm);
@@ -47,8 +48,9 @@ export default function TransferPage() {
 
   function prepareReview(event) {
     event.preventDefault();
-    if (!/^\d{22}$/.test(form.destino.trim())) {
-      setError("El CBU o CVU debe tener exactamente 22 números.");
+    const destination = form.destino.trim();
+    if (!/^\d{22}$/.test(destination) && !ALIAS_PATTERN.test(destination)) {
+      setError("Ingresá un alias bancario válido (6 a 30 caracteres, sin espacios) o un CBU/CVU de 22 números.");
       return;
     }
     if (!/^\d+(\.\d{1,2})?$/.test(form.monto) || Number(form.monto) <= 0 || Number(form.monto) > 9999999999.99) {
@@ -112,7 +114,7 @@ export default function TransferPage() {
           <strong className="result-amount">{formatMoney(result.monto)}</strong>
           <p>La transferencia se procesó correctamente. Tu saldo quedó en {formatMoney(result.saldo_resultante)}.</p>
           <div className="result-detail">
-            <span>CBU / CVU destino</span><strong>{result.destino || form.destino}</strong>
+            <span>{result.destino_tipo === "alias" ? "Alias destino" : "CBU / CVU destino"}</span><strong>{result.destino || form.destino}</strong>
             {result.descripcion && <><span>Concepto</span><strong>{result.descripcion}</strong></>}
           </div>
           <button type="button" className="button button-primary" onClick={startAnother}>Hacer otra transferencia <ArrowRight size={17} /></button>
@@ -131,7 +133,7 @@ export default function TransferPage() {
           </div>
           <dl className="detail-list">
             <div><dt>Desde</dt><dd>Cuenta ····{String(sourceAccount?.cbu || "").slice(-4)}</dd></div>
-            <div><dt>Hacia</dt><dd className="account-destination">{form.destino}</dd></div>
+            <div><dt>Hacia · { /^\d{22}$/.test(form.destino.trim()) ? "CBU / CVU" : "Alias"}</dt><dd className="account-destination">{form.destino}</dd></div>
             {form.descripcion.trim() && <div><dt>Concepto</dt><dd>{form.descripcion.trim()}</dd></div>}
           </dl>
           <div className="alert alert-info"><ShieldCheck size={18} /><span>Las transferencias se procesan de forma segura. Revisá bien los datos antes de continuar.</span></div>
@@ -148,7 +150,7 @@ export default function TransferPage() {
             </div>
             <form className="form-stack" onSubmit={prepareReview}>
               <AccountSelect accounts={accounts} value={form.cuenta_origen_id} onChange={(value) => setForm((current) => ({ ...current, cuenta_origen_id: value }))} />
-              <Field id="destino" name="destino" label="CBU o CVU de destino" inputMode="numeric" autoComplete="off" maxLength={22} pattern="\d{22}" placeholder="0000000000000000000000" hint="Ingresá los 22 números del CBU o CVU." value={form.destino} onChange={updateField} required />
+              <Field id="destino" name="destino" label="Alias o CBU/CVU de destino" autoComplete="off" maxLength={30} placeholder="alias.bancario o 22 dígitos" hint="Podés transferir con un alias bancario (6 a 30 caracteres, sin espacios) o con los 22 números del CBU/CVU." value={form.destino} onChange={updateField} required />
               <Field id="monto" name="monto" label="¿Cuánto querés enviar?" type="text" inputMode="decimal" pattern="\d+(\.\d{1,2})?" placeholder="0,00" hint="Importe en pesos argentinos (ARS)." value={form.monto} onChange={updateField} required />
               <Field id="descripcion" name="descripcion" label="Concepto (opcional)" maxLength={140} placeholder="Por ejemplo, alquiler" value={form.descripcion} onChange={updateField} />
               <div className="alert alert-info"><CircleHelp size={17} /><span>Antes de confirmar, vas a poder revisar los datos de tu envío.</span></div>
