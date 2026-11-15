@@ -26,14 +26,19 @@ async function ensureIndex(connection, table, index) {
   }
 }
 
-async function removeColumn(connection, table, column) {
+async function removeEmptyColumn(connection, table, column) {
   const [rows] = await connection.query(
     `SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
     [table, column]
   );
   if (rows.length) {
-    await connection.query(`ALTER TABLE \`${table}\` DROP COLUMN \`${column}\``);
+    const [values] = await connection.query(
+      `SELECT 1 FROM \`${table}\` WHERE \`${column}\` IS NOT NULL LIMIT 1`
+    );
+    if (!values.length) {
+      await connection.query(`ALTER TABLE \`${table}\` DROP COLUMN \`${column}\``);
+    }
   }
 }
 
@@ -56,9 +61,9 @@ async function main() {
       "ALTER TABLE cuentas MODIFY alias VARCHAR(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL"
     );
     await ensureIndex(connection, "cuentas", "uq_cuentas_alias");
-    // Los alias existentes en usuarios eran nombres de perfil, no identificadores bancarios.
-    await removeColumn(connection, "usuarios", "alias");
-    await removeColumn(connection, "usuarios", "alias_updated_at");
+    // Los alias de perfil anteriores no son aliases bancarios; conservar columnas con datos evita perderlos.
+    await removeEmptyColumn(connection, "usuarios", "alias");
+    await removeEmptyColumn(connection, "usuarios", "alias_updated_at");
     await ensureColumn(connection, "plazos_fijos", "liquidado_at", "DATETIME NULL");
     await connection.query(
       `ALTER TABLE movimientos MODIFY tipo ENUM(

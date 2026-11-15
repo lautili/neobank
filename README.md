@@ -106,7 +106,7 @@ La interfaz queda disponible en `http://localhost:5173`.
 - Plazos fijos: cálculo de intereses y alta de inversiones
 - Perfil: edición de alias bancario por cuenta (un cambio cada 30 días, validado por el servidor) y URL de avatar personal
 
-El alias identifica una cuenta para recibir transferencias; no es un nombre de usuario. `/auth/me` y el login solo exponen los datos personales y el avatar. Los alias se validan y almacenan en `cuentas`, con unicidad case-insensitive por banco. El setup migratorio retira de `usuarios` los alias de perfil anteriores sin copiarlos a cuentas.
+El alias identifica una cuenta para recibir transferencias; no es un nombre de usuario. `/auth/me` y el login solo exponen los datos personales y el avatar. Los alias se validan y almacenan en `cuentas`, con unicidad case-insensitive por banco. La migración no copia a cuentas alias de perfil anteriores; si esas columnas contienen datos, las conserva sin usarlas ni exponerlas.
 
 ### Tarjetas de demostración
 
